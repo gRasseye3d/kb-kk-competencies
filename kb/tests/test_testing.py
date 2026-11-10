@@ -16,6 +16,7 @@ Q = '44444444-4444-4444-8444-444444444444'
 O = '55555555-5555-4555-8555-555555555555'
 B = '66666666-6666-4666-8666-666666666666'
 Q2 = '77777777-7777-4777-8777-777777777777'
+FUTURE = datetime(2090,1,1,tzinfo=timezone.utc)
 
 
 @contextmanager
@@ -53,7 +54,7 @@ class TestingTests(unittest.TestCase):
         for status,due,error in (
             ('in_progress',None,'already started'),
             ('assigned',datetime.now(timezone.utc)-timedelta(days=1),'Deadline')):
-            a={'status':status,'due_at':due,'frozen_structure':{'competencies':[]}}
+            a={'status':status,'assignment_type':'manager_assigned','due_at':due,'frozen_structure':{'competencies':[]}}
             def query(sql,*args,**kwargs):
                 if 'FROM test_assignments a' in sql: return a
                 if ' AS valid' in sql: return {'valid':False}
@@ -66,7 +67,7 @@ class TestingTests(unittest.TestCase):
     def test_department_and_role_checked_before_assigning(self):
         with patch.object(t.db,'transaction',transaction),patch.object(t,'own_department',side_effect=PermissionError),\
              patch.object(t.db,'query') as query:
-            with self.assertRaises(PermissionError): t.assign(Request(data={'test_id':A,'user_id':U}))
+            with self.assertRaises(PermissionError): t.assign(Request(data={'test_id':A,'user_id':U,'due_at':FUTURE.isoformat()}))
             query.assert_not_called()
 
     def test_transferred_employee_results_exclude_previous_department_for_new_manager(self):
@@ -94,15 +95,15 @@ class TestingTests(unittest.TestCase):
                              [{'assignment_id': Q}, {'assignment_id': Q2}])
 
     def test_exact_match_validation_and_reservation_release_order(self):
-        req=Request(data={'answers':{}})
+        req=Request(data={'answers':{Q2:[]}})
         frozen={'type':'single','options':[{'id':O,'body':'x','correct':True}]}
-        queries=[{'id':U}, {'status':'in_progress','assignment_id':A},
+        queries=[{'id':U}, {'status':'in_progress','assignment_id':A,'immutable_snapshot':{'competencies':[]}},
                  [{'competency_id':C,'question_count':2}],
                  [{'question_id':Q,'competency_id':C,'frozen_question':frozen}]]
         def query(sql,*args,**kwargs): return queries.pop(0)
         with patch.object(t.db,'transaction',transaction),patch.object(t.db,'query',side_effect=query),\
              patch.object(t.db,'execute') as execute:
-            with self.assertRaisesRegex(ValueError,'exactly once'): t.submit(req,A)
+            with self.assertRaisesRegex(ValueError,'Invalid question'): t.submit(req,A)
             execute.assert_not_called()
 
     def test_wrong_role_cannot_create_question(self):
@@ -124,9 +125,9 @@ class TestingTests(unittest.TestCase):
         frozen={'type':'single','options':[{'id':O,'body':'x','correct':True}]}
         def query(sql,*args,**kwargs):
             if sql.startswith('SELECT id FROM users'): return {'id':U}
-            if 'FROM test_attempts t' in sql: return {'status':'in_progress','assignment_id':A}
+            if 'FROM test_attempts t' in sql: return {'status':'in_progress','assignment_id':A,'immutable_snapshot':{'competencies':[]}}
             if 'FROM attempt_competencies' in sql: return [{'competency_id':C,'question_count':2}]
-            if 'FROM attempt_questions' in sql: return [{'question_id':Q,'competency_id':C,'frozen_question':frozen}]
+            if 'FROM attempt_questions' in sql: return [{'question_id':qid,'competency_id':C,'frozen_question':frozen} for qid in (Q,Q2)]
             if 'INSERT INTO attempt_answers' in sql: return {'id':A}
             raise AssertionError(sql)
         with patch.object(t.db,'transaction',transaction),patch.object(t.db,'query',side_effect=query),\
@@ -148,7 +149,8 @@ class TestingTests(unittest.TestCase):
             {'id':O,'revision_id':A}, {'id':U,'revision_id':A}]}]
         def query(sql,*args,**kwargs):
             if sql.startswith('SELECT id FROM users'): return {'id':U}
-            if 'FROM test_assignments a' in sql: return {'status':'assigned','due_at':None,'frozen_structure':{'competencies':comps}}
+            if ' AS valid' in sql: return {'valid':True}
+            if 'FROM test_assignments a' in sql: return {'status':'assigned','assignment_type':'manager_assigned','due_at':FUTURE,'frozen_structure':{'competencies':comps}}
             if 'FROM assessment_cooldowns' in sql: return None
             if 'FROM test_competency_reservations' in sql: return {'?column?':1} if args[0][1]==C else None
             if 'INSERT INTO test_attempts' in sql: return {'id':A}
@@ -167,7 +169,8 @@ class TestingTests(unittest.TestCase):
                {'competency_id':B,'block_id':B,'questions':[{'id':O,'revision_id':A},{'id':U,'revision_id':A}]}]
         def query(sql,*args,**kwargs):
             if sql.startswith('SELECT id FROM users'): return {'id':U}
-            if 'FROM test_assignments a' in sql: return {'status':'assigned','due_at':None,'frozen_structure':{'competencies':comps}}
+            if ' AS valid' in sql: return {'valid':True}
+            if 'FROM test_assignments a' in sql: return {'status':'assigned','assignment_type':'manager_assigned','due_at':FUTURE,'frozen_structure':{'competencies':comps}}
             if 'FROM assessment_cooldowns' in sql or 'FROM test_competency_reservations' in sql: return None
             if 'INSERT INTO test_attempts' in sql: return {'id':A}
             raise AssertionError(sql)
@@ -184,8 +187,9 @@ class TestingTests(unittest.TestCase):
         names = {C:'Аналитика', B:'Общение'}
         for reason in ('cooldown_30d','reserved_active'):
             with self.subTest(reason=reason):
-                assignment={'status':'assigned','due_at':None,'frozen_structure':{'competencies':comps}}
+                assignment={'status':'assigned','assignment_type':'manager_assigned','due_at':FUTURE,'frozen_structure':{'competencies':comps}}
                 def query(sql,params=(),**kwargs):
+                    if ' AS valid' in sql: return {'valid':True}
                     if sql.startswith('SELECT id FROM users'): return {'id':U}
                     if 'FROM test_assignments a' in sql:
                         self.assertIn('a.user_id=%s',sql)
@@ -242,14 +246,16 @@ class TestingTests(unittest.TestCase):
             self.assertEqual(json.loads(body),expected)
 
     def test_publish_locks_questions_in_stable_order_before_revision(self):
-        comps=[{'competency_id':B,'block_id':A},{'competency_id':C,'block_id':A}]
-        candidates=[[{'id':Q2},{'id':Q}],[{'id':O},{'id':U}]]
+        blocks=[{'block_id': A, 'title': 'Block', 'position': 1, 'competencies': [
+            {'competency_id': B, 'competency_name': 'B', 'question_ids': [Q2,Q]},
+            {'competency_id': C, 'competency_name': 'C', 'question_ids': [O,U]}]}]
+        test={'id': A, 'title': 'Test', 'status': 'draft'}
         seen=[]
         def query(sql,params=(),**kwargs):
             seen.append(sql)
-            if 'FROM tests WHERE' in sql: return {'status':'draft'}
-            if 'FROM test_block_competencies' in sql: return comps
-            if 'FROM questions q' in sql: return candidates.pop(0)
+            if 'FROM tests WHERE' in sql: return test
+            if sql.startswith('SELECT max(version)'): return {'version': None}
+            if 'FROM competency_profiles' in sql: return [{'competency_id': B}, {'competency_id': C}]
             if 'FROM questions\n' in sql:
                 self.assertEqual(params[0],sorted([Q2,Q,O,U]))
                 self.assertIn('ORDER BY id FOR UPDATE',sql)
@@ -260,8 +266,9 @@ class TestingTests(unittest.TestCase):
             if 'INSERT INTO test_versions' in sql: return {'id':A}
             raise AssertionError(sql)
         with patch.object(t.db,'transaction',transaction),patch.object(t,'own_department',return_value=A),\
+             patch.object(t,'current_blocks',return_value=blocks),\
              patch.object(t.db,'query',side_effect=query),patch.object(t.db,'execute') as execute:
-            t.publish(Request(roles=('kk_responsible',)),A)
+            t.publish(Request(roles=('kk_responsible',), data={'expected_token': t.expected_token(test, blocks, None)}),A)
         self.assertLess(next(i for i,s in enumerate(seen) if 'ORDER BY id FOR UPDATE' in s),
                         next(i for i,s in enumerate(seen) if 'INSERT INTO question_revisions' in s))
         self.assertEqual(sum('INSERT INTO question_revisions' in s for s in seen),4)
@@ -273,16 +280,22 @@ class TestingTests(unittest.TestCase):
             with self.assertRaises(PermissionError): t.question_detail(Request(),Q)
             query.assert_not_called()
         with patch.object(t.db,'transaction',transaction),patch.object(t,'own_department',return_value=A),\
-             patch.object(t.db,'query',side_effect=[{'id':Q,'body':'Question'},
+             patch.object(t.db,'query',side_effect=[{'id':Q,'body':'Question','import_item_id':O,'import_id':B},
                                                     [{'id':O,'body':'yes','is_correct':True}]]) as query:
             response=t.question_detail(Request(roles=('kk_responsible',)),Q)
         self.assertIn(b'is_correct',response.body)
+        self.assertEqual(json.loads(response.body)['import_id'],B)
+        self.assertIn('LEFT JOIN question_import_items',query.call_args_list[0].args[0])
         self.assertEqual(query.call_args_list[0].args[1],(Q,A))
 
     def test_assignment_deadline_checked_with_database_clock_in_transaction(self):
         req=Request(roles=('manager',),data={'user_id':U,'test_id':A,'due_at':'2090-01-01T00:00:00+00:00'})
         def query(sql,*args,**kwargs):
             if 'INSERT INTO test_assignments' in sql: return None
+            if 'FROM tests WHERE' in sql: return {'status': 'published'}
+            if 'SELECT max(version)' in sql: return {'version': 1}
+            if 'SELECT frozen_structure' in sql: return {'frozen_structure': {'competencies': [{'competency_id': C}]}}
+            if 'FROM competency_profiles' in sql: return [{'competency_id': C}]
             return {'?column?':1}
         with patch.object(t.db,'transaction',transaction),patch.object(t,'own_department',return_value=B),\
              patch.object(t.db,'query',side_effect=query) as queried:
@@ -309,9 +322,9 @@ class TestingTests(unittest.TestCase):
             def close(self): self.closed=True
         conn=Conn()
         with patch.object(db,'get_conn',return_value=conn),patch.object(t,'lock_user'),\
-             patch.object(t.db,'query',side_effect=[{'status':'assigned','due_at':None,'frozen_structure':{
+             patch.object(t.db,'query',side_effect=[{'status':'assigned','assignment_type':'manager_assigned','due_at':FUTURE,'frozen_structure':{
                  'competencies':[{'competency_id':C,'block_id':B,'questions':[{'id':Q},{'id':Q2}]}]}},
-                 None,None,{'id':A}]),patch.object(t.db,'execute',side_effect=RuntimeError('write failed')):
+                 {'valid':True},None,None,{'id':A}]),patch.object(t.db,'execute',side_effect=RuntimeError('write failed')):
             with self.assertRaisesRegex(RuntimeError,'write failed'): t.start(Request(),A)
         self.assertTrue(conn.rolled_back)
         self.assertFalse(conn.committed)
@@ -326,7 +339,8 @@ class TestingTests(unittest.TestCase):
             def close(self): pass
         conn=Conn()
         def query(sql,*args,**kwargs):
-            if 'FROM test_assignments a' in sql: return {'status':'assigned','due_at':None,
+            if ' AS valid' in sql: return {'valid':True}
+            if 'FROM test_assignments a' in sql: return {'status':'assigned','assignment_type':'manager_assigned','due_at':FUTURE,
                 'frozen_structure':{'competencies':[{'competency_id':C,'block_id':B,
                                                      'questions':[{'id':Q,'revision_id':A},{'id':Q2,'revision_id':A}]}]}}
             if 'FROM assessment_cooldowns' in sql or 'FROM test_competency_reservations' in sql: return None

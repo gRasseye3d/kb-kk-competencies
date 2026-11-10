@@ -62,6 +62,7 @@ async function departmentArea(kind, refresh) {
   if (!available.length) return empty(manager ? 'Вы пока не назначены руководителем подразделения.' : 'Вы пока не назначены ответственным за карту компетенций подразделения.');
   const catalog = manager ? null : await request('GET', '/api/competencies/catalog');
   const root = el('div', { class: 'cm-stack' });
+  const editors = [];
   for (const department of available) {
     const profiles = await request('GET', `/api/competencies/departments/${department.id}/profiles`);
     const active = manager ? await request('GET', `/api/competencies/departments/${department.id}/active`) : null;
@@ -81,11 +82,14 @@ async function departmentArea(kind, refresh) {
     }
     // A failed test API must not hide maps or the department summary.
     try {
-      section.append(manager ? await renderManagerTesting(department, refresh) :
-        await renderResponsibleTesting(profiles.find(p => p.is_active)?.competencies || [], refresh));
+      const testing = manager ? await renderManagerTesting(department, refresh) :
+        await renderResponsibleTesting(profiles.find(p => p.is_active)?.competencies || [], refresh);
+      if (!manager) editors.push(testing);
+      section.append(testing);
     } catch (error) { section.append(notice(errorText(error), true)); }
     root.append(section);
   }
+  root.hasUnsavedChanges = () => editors.some(editor => editor.hasUnsavedChanges?.());
   return root;
 }
 
@@ -146,14 +150,31 @@ export async function renderCompetencies() {
   if (roles.includes('admin')) tabs.push({ key: 'admin', title: 'Каталог и назначения', render: adminArea });
   const tabbar = el('div', { class: 'cm-tabs', role: 'tablist', 'aria-label': 'Рабочие области' });
   const content = el('div', { role: 'tabpanel', id: 'competency-panel' });
+  const discardNotice = notice();
   let generation = 0;
   let current = tabs.find(t => t.key === new URLSearchParams(location.hash.split('?')[1] || '').get('tab')) || tabs[0];
-  const load = async (message = '') => {
+  let mounted = null;
+  const confirmDiscard = action => {
+    if (!mounted?.hasUnsavedChanges?.()) return false;
+    discardNotice.className = 'cm-notice is-error';
+    discardNotice.replaceChildren('Есть несохранённые изменения тестов. Сохраните их или подтвердите сброс перед переходом.',
+      el('button', { type: 'button', class: 'btn secondary', onclick: () => {
+        discardNotice.replaceChildren('Переход отменён. Изменения сохранены в редакторе.');
+      } }, 'Остаться'),
+      el('button', { type: 'button', class: 'btn secondary', onclick: async () => {
+        discardNotice.replaceChildren();
+        await action();
+      } }, 'Сбросить правки и продолжить'));
+    return true;
+  };
+  const load = async (message = '', discard = false) => {
+    if (!discard && confirmDiscard(() => load(message, true))) return false;
+    discardNotice.replaceChildren();
     const ticket = ++generation;
     content.replaceChildren(notice('Загрузка…'));
     try {
       const area = await current.render(load);
-      if (ticket === generation) content.replaceChildren(notice(message), area);
+      if (ticket === generation) { mounted = area; content.replaceChildren(notice(message), area); }
     } catch (error) {
       if (ticket === generation) content.replaceChildren(notice(errorText(error), true),
         el('button', { class: 'btn secondary', onclick: () => load() }, 'Повторить загрузку'));
@@ -161,10 +182,15 @@ export async function renderCompetencies() {
   };
   const buttons = tabs.map(tab => el('button', { class: 'cm-tab', type: 'button', role: 'tab',
     id: `competency-tab-${tab.key}`, 'aria-controls': 'competency-panel', onclick: async () => {
-      current = tab;
-      history.replaceState(null, '', `#/competencies?tab=${tab.key}`);
-      updateTabs();
-      await load();
+       if (tab === current) return;
+       const switchTab = async () => {
+         current = tab;
+         history.replaceState(null, '', `#/competencies?tab=${tab.key}`);
+         updateTabs();
+         await load('', true);
+       };
+       if (confirmDiscard(switchTab)) return;
+       await switchTab();
     } }, tab.title));
   function updateTabs() {
     buttons.forEach((button, index) => button.setAttribute('aria-selected', String(tabs[index] === current)));
@@ -172,7 +198,7 @@ export async function renderCompetencies() {
   }
   updateTabs();
   tabbar.append(...buttons);
-  root.append(tabbar, content);
+  root.append(tabbar, discardNotice, content);
   await load();
   return root;
 }

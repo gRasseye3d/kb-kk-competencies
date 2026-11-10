@@ -20,7 +20,7 @@ views и CSS в frontend и сохранять единый контракт с�
 верификатор не выполняет принудительную установку и не обновляет manifest.
 
 Сначала полная исходная v4 схема в **новой пустой PostgreSQL 15+ БД**, затем
-миграции 03 → 04 → 05 → 06. Ни схема, ни SQL здесь не запускаются автоматически;
+миграции 03 → 04 → 05 → 06 → 07. Ни схема, ни SQL здесь не запускаются автоматически;
 копирование файлов не является миграцией действующей БД. Tables пользователей,
 ролей, отделов, назначения, каталог/карты и аудит принадлежат общему хосту.
 
@@ -66,7 +66,8 @@ node --experimental-vm-modules --test tests/*.test.mjs
 env -u DATABASE_URL PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m unittest discover -s deploy/poc -p 'test_*.py' -v
 ```
 
-`test_competencies.py`, `test_testing.py`, `test_admin_department_projection.py`
+`test_competencies.py`, `test_testing.py`, `test_question_imports.py`,
+`test_admin_department_projection.py`
 импортируют реальный хост. `frontend.test.mjs` проверяет также admin/router/auth
 и **тоже требует полный хост**, не только две views модуля. Вторая frontend suite
 `moderation.frontend.test.mjs` остаётся в хосте; при overlay запускаются обе.
@@ -76,5 +77,10 @@ PostgreSQL safety guards работают без БД, но API integration по
 
 Manifest не хеширует себя и редакционные README: `component_files` — точный
 allowlist overlay, `compatible_host_shared_files` — только проверки совместимости.
-Ни одна запись shared не копируется из этого репозитория. Для новой согласованной
-версии manifest обновляется только после ручной проверки и повторного тестирования.
+Ни одна запись shared не копируется из этого репозитория. Эта версия манифеста
+проверяет побайтную совместимость, но новые тесты при подготовке локальных
+коммитов намеренно не запускались. Перед интеграцией в свой хост повторите
+тесты и ручную приёмку согласно `docs/STAGE*_ACCEPTANCE.md` и
+`docs/LLM_PREP_ACCEPTANCE.md`: последний этап поддерживает только ручную
+вставку ответа без вызова внешней LLM. Применять 07 к существующей БД только
+после защищённого бэкапа и отдельного согласования развёртывания.
