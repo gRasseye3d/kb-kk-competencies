@@ -1,0 +1,35 @@
+# Include only files needed by the application image
+**
+
+!requirements.txt
+
+!app/
+!app/**
+
+!static/
+!static/**
+
+!deploy/
+!deploy/poc/
+!deploy/poc/**
+
+# Exclude sensitive and generated content
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/*.cer
+
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+**/uploads/
+**/tls/
+**/backups/
+**/*.before-*
+**/*.bak
+**/*.tmp

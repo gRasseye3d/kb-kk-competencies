@@ -1,0 +1,39 @@
+name: kb_kk_poc
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kb_poc
+      POSTGRES_USER: kb_poc
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kb_poc -d kb_poc"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/poc/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://kb_poc:${DB_PASSWORD:?required}@db/kb_poc
+      KB_SESSION_COOKIE_NAME: kb_kk_poc_sid
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  tls:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:18575:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../tls:/etc/nginx/tls:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+volumes:
+  db_data:

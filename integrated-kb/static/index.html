@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>База знаний</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/competencies.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="logo"><span class="logo-icon">M</span> База знаний</div>
+  </div>
+  
+  <div class="topbar-center">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input id="globalSearch" type="search" placeholder="Поиск по базе знаний...">
+      <span class="search-shortcut">⌘ K</span>
+    </div>
+  </div>
+
+  <div class="topbar-right" id="profile"></div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-nav">
+      <div class="nav-item active" data-section="kb" onclick="window.location.hash='#/'">
+        <span class="nav-icon">🏠</span> Главная
+      </div>
+      <div class="nav-item" data-section="drafts" onclick="window.location.hash='#/drafts'">
+        <span class="nav-icon">📝</span> Черновики
+      </div>
+      <div class="nav-item" data-section="competencies" onclick="window.location.hash='#/competencies'">📋 Компетенции</div>
+    </div>
+
+    <div class="sidebar-section-header">
+      <span>Отделы (Пространства)</span>
+      <button class="btn-add">+</button>
+    </div>
+
+    <div id="tree" class="tree-container"></div>
+  </aside>
+
+  <main id="main"></main>
+</div>
+
+<div id="modalRoot"></div>
+<!-- Атрибут type="module" обязателен! -->
+<script src="/static/js/app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+# Виртуальное окружение Python
+venv/
+__pycache__/
+*.pyc
+
+# Логи и временные файлы
+*.log
+tmp/
+temp/
+
+# Статические файлы, которые генерируются (если есть)
+static/videos/
+static/uploads/
+
+# Настройки окружения
+.env
+.DS_Store
+
+# Python environments and caches
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+
+# Secrets and credentials
+.env.*
+!.env.example
+*.env
+*.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+tls/
+certs/
+
+# Production data and backups
+uploads/
+attachments/
+backups/
+dumps/
+*.dump
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+
+# Temporary files and rollback snapshots
+*.before-*
+*.bak
+*.old
+*.orig
+*.tmp
+*~
+hls-test-/
+
+# Local Compose overrides
+compose.override.yaml
+compose.prod.yaml
+compose.hls-release.yaml
+compose.hls-rollback.yaml
+compose.parent-fix.yaml
+compose.responsive-video.yaml
+compose.uuid-fix.yaml

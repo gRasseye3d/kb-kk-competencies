@@ -1,0 +1,59 @@
+name: kbkk
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kb_prod
+      POSTGRES_USER: kb_prod
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/schema_production.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kb_prod -d kb_prod"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - backend
+
+  app:
+    build:
+      context: .
+      dockerfile: deploy/poc/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://kb_prod:${DB_PASSWORD:?Set DB_PASSWORD in .env}@db:5432/kb_prod
+      KB_SESSION_COOKIE_NAME: kbkk_sid
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads/videos:/srv/kb/uploads/videos
+      - ./uploads/hls:/srv/kb/uploads/hls:ro
+    restart: unless-stopped
+    networks:
+      - backend
+
+  tls:
+    image: nginx:1.27-alpine
+    ports:
+      - "${KB_HTTPS_BIND:-127.0.0.1}:${KB_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./deploy/poc/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./tls:/etc/nginx/tls:ro
+      - ./uploads/videos:/srv/kb/uploads/videos:ro
+      - ./uploads/hls:/srv/kb/uploads/hls:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+
+networks:
+  backend:
+    driver: bridge

@@ -1,0 +1,68 @@
+# Git metadata
+.git
+.gitignore
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.env
+*.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*credentials*
+*secrets*
+tls/
+certs/
+
+# Production data
+uploads/
+attachments/
+videos/
+backups/
+dumps/
+*.dump
+*.backup
+*.sqlite*
+*.db
+
+# Temporary files and snapshots
+*.before-*
+*.bak
+*.old
+*.orig
+*~
+hls-test-*/
+*.log
+logs/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Other local artifacts
+node_modules/
+coverage/
+.coverage
+htmlcov/
+.cache/
+.DS_Store
+*.swp
+*.tmp
+
+# Deployment rollback overrides
+compose.hls-release.yaml
+compose.hls-rollback.yaml
+compose.parent-fix.yaml
+compose.responsive-video.yaml
+compose.uuid-fix.yaml
